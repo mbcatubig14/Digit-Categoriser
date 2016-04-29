@@ -3,17 +3,32 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import static java.lang.Integer.parseInt;
+import static java.lang.Math.pow;
+import static java.lang.Math.sqrt;
+import static java.lang.System.in;
+import static java.lang.System.nanoTime;
 import static java.lang.System.out;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import static java.util.Collections.sort;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Random;
+import java.util.Scanner;
 
+/*
+ This is Digit Categoriser program that takes inputs from the Optical Recognition of Handwritten Digits Data Set.
+ It categorises digits using K-Nearest-Neighbor(s) Algorithm. This outputs the validation results.
+ */
 public class DigitCategoriser {
 
-    static class DataVector {
+    //Class model for Data Vector
+    static class DataSet {
 
         int[] inputs;
         int output;
 
-        public DataVector(int[] inputs, int output) {
+        public DataSet(int[] inputs, int output) {
             this.inputs = inputs;
             this.output = output;
         }
@@ -25,7 +40,7 @@ public class DigitCategoriser {
 
     }
 
-    //Class model to compare two results for sorting
+    //Class model to compare two results for sorting the distances
     private static class DistanceComparator implements Comparator<Result> {
 
         @Override
@@ -41,27 +56,28 @@ public class DigitCategoriser {
 
     }
 
-    //Object model for Result
+    //Class model for result
     static class Result {
 
         double distance;
-        int label;
+        int targetOutput;
 
-        public Result(double distance, int label) {
+        //Constructor that takes two parameters, one is double variable for distance and integer variable for the label
+        public Result(double distance, int targetOutput) {
             this.distance = distance;
-            this.label = label;
+            this.targetOutput = targetOutput;
         }
 
         @Override
         public String toString() {
-            return "Result{" + "distance=" + distance + ", label=" + label + '}';
+            return "Result{" + "distance=" + distance + ", label=" + targetOutput + '}';
         }
 
     }
 
-    //creates the data set from file
-    private ArrayList<DataVector> createDataSetFromFile(String csvFile) {
-        ArrayList<DataVector> dataList = new ArrayList<>();
+    //creates the data set from file that takes a String parameter and returns an Arraylist of DataSet
+    private ArrayList<DataSet> createDataSetFromFile(String csvFile) {
+        ArrayList<DataSet> dataList = new ArrayList<>();
         int[][] dataSetArray = new int[2810][65];
         try {
             int instances = 0;
@@ -71,9 +87,10 @@ public class DigitCategoriser {
                 String[] dataFromCSV = line.split(",");
 
                 //takes the input attributes
-                int[] input = new int[63];
+                int[] input = new int[64];
+
                 for (int i = 0; i < dataFromCSV.length - 1; i++) {
-                    if (i < 63) {
+                    if (i < input.length) {
                         dataSetArray[instances][i] = parseInt(dataFromCSV[i]); //parse data    
                         input[i] = dataSetArray[instances][i];
                     }
@@ -82,7 +99,7 @@ public class DigitCategoriser {
                 //takes the class label
                 int label = parseInt(dataFromCSV[64]);
                 //dataList.add(new DataSet(dataSetArray[instances], dataSetArray[instances][64]));
-                dataList.add(new DataVector(input, label));
+                dataList.add(new DataSet(input, label));
                 instances++;
             }
         } catch (IOException | NumberFormatException ex) {
@@ -90,55 +107,38 @@ public class DigitCategoriser {
         return dataList;
     }
 
-    private int randomKNumber() {
-        return (int) (Math.random() * 11 + 1);
-    }
-
     //It performs 2-fold cross validation returning a accuracy result
-    private void crossValidate(ArrayList<DataVector> dataSet, int kFold) {
-        ArrayList<DataVector>[] subSets = new ArrayList[kFold];
+    private void crossValidate(ArrayList<DataSet> trainingSet, ArrayList<DataSet> testingSet, int kFold) {
 
-        ArrayList<DataVector> trainingSet = new ArrayList<>(dataSet.size() / kFold);
-        ArrayList<DataVector> testingSet = new ArrayList<>(dataSet.size() / kFold);
-
-        for (int i = 0; i < dataSet.size(); i++) {
-            int randomIndex = new Random().nextInt(dataSet.size());
-            trainingSet.add(dataSet.get(randomIndex));
-        }
-
-        for (int i = 0; i < dataSet.size(); i++) {
-            int randomIndex = new Random().nextInt(dataSet.size());
-            testingSet.add(dataSet.get(randomIndex));
-        }
-
-        subSets[0] = trainingSet;
-        subSets[1] = testingSet;
-
-        double accuracy = 0;
-        double meanSquaredError = 0;
         int counter = 0;
-        for (ArrayList<DataVector> subSet : subSets) {
-            System.out.println("Subset " + counter + 1);
-            for (int k = 1; k < 11; k++) {
-                int[] predictedOutput = new int[subSet.size()];
-                for (int testSetIndex = 0; testSetIndex < subSet.size(); testSetIndex++) {
-                    int predicts = findNearestNeigbour(dataSet, subSet.get(testSetIndex), k);
-                    predictedOutput[testSetIndex] = predicts;
-                    //System.out.println("Target Output: " + subSet.get(testSetIndex).output + " Actual Output: " + predicts);
-                }
-                System.out.println("K = " + k);
-                accuracy = accuracyRate(subSet, predictedOutput);
-                System.out.println("Accuracy: " + accuracy);
-                meanSquaredError = meanSquareError(subSet, predictedOutput);
-                System.out.println("Mean Squared Error: " + meanSquaredError);
+        for (int k = 1; k <= 10; k++) {
+            int[] predictedOutput = new int[trainingSet.size()];
+            for (int testSetIndex = 0; testSetIndex < trainingSet.size(); testSetIndex++) {
+                int predicts = findNearestNeigbour(trainingSet, testingSet.get(testSetIndex), k);
+                predictedOutput[testSetIndex] = predicts;
             }
-            counter++;
-        }
 
+            out.println("K = " + k);
+            double accuracy = accuracyRate(testingSet, predictedOutput);
+
+            out.println("Switching Folds...");
+            int[] predictedOutput1 = new int[testingSet.size()];
+            for (int trainSetIndex = 0; trainSetIndex < testingSet.size(); trainSetIndex++) {
+                int predicts = findNearestNeigbour(testingSet, trainingSet.get(trainSetIndex), k);
+                predictedOutput1[trainSetIndex] = predicts;
+                //System.out.println("Target Output: " + subSet.get(testSetIndex).output + " Actual Output: " + predicts);
+            }
+
+            accuracy += accuracyRate(trainingSet, predictedOutput1);
+
+            double average = accuracy / kFold;
+            out.println("Average Accuracy: " + average);
+        }
+        counter++;
     }
 
-    //calculates and returns the accuracy rate between actual and expected outputs
-    private double accuracyRate(ArrayList<DataVector> testSet, int[] predictions) {
+    //calculates and returns the accuracy rate between actual output and expected output
+    private double accuracyRate(ArrayList<DataSet> testSet, int[] predictions) {
         int correct = 0;
         double size = testSet.size();
         for (int i = 0; i < size; i++) {
@@ -146,35 +146,22 @@ public class DigitCategoriser {
                 correct += 1;
             }
         }
-
+        out.println(correct + " out of " + predictions.length + " correct classes.");
         double average = (correct / size) * 100;
 
         return average;
     }
 
-    //calculates and returns the mean squared error
-    private double meanSquareError(ArrayList<DataVector> testSet, int[] predictions) {
-        int count = 0;
-        double totalError = 0;
-        double size = testSet.size();
-        for (int i = 0; i < size; i++) {
-            int difference = testSet.get(i).output - predictions[i];
-            totalError += difference * difference;
-            count++;
-        }
-
-        return totalError / (2 * count);
-    }
-
-    //calculates and returns the distance between two inputs
-    private double distance(DataVector vectorA, int[] vectorB) {
+    //calculates and returns the distance between two inputs of vectorA and vectorB
+    private double distance(DataSet vectorA, int[] vectorB) {
         double distance = 0;
         for (int d = 0; d < vectorA.inputs.length; d++) {
-            distance += Math.pow(vectorA.inputs[d] - vectorB[d], 2);
+            distance += pow(vectorA.inputs[d] - vectorB[d], 2);
         }
-        return Math.sqrt(distance);
+        return sqrt(distance);
     }
 
+    // vote for the closest category
     private int voteClosestCategory(int[] neighbours) {
         int[] classLabels = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
         int[] counts = new int[classLabels.length];
@@ -231,21 +218,21 @@ public class DigitCategoriser {
 
     }
 
-    //Finds the nearest Neighbours
-    private int findNearestNeigbour(ArrayList<DataVector> dataSet, DataVector testData, int k) {
+    //Finds the nearest Neighbours with the parameter of training set and the testing data
+    private int findNearestNeigbour(List<DataSet> dataSet, DataSet testData, int k) {
         ArrayList<Result> resultList = new ArrayList<>(k);
-        for (DataVector dataVector : dataSet) {
+        for (DataSet dataVector : dataSet) {
             double distance = distance(dataVector, testData.inputs);
             resultList.add(new Result(distance, dataVector.output));
         }
 
         //Sorts the results by distance
-        Collections.sort(resultList, new DistanceComparator());
+        sort(resultList, new DistanceComparator());
 
-        //Getting the nearest class found
+        //Gets the nearest classes found
         int[] neighbours = new int[k];
         for (int i = 0; i < k; i++) {
-            neighbours[i] = resultList.get(i).label;
+            neighbours[i] = resultList.get(i).targetOutput;
         }
 
         //result of the voting from the neighbours found earlier
@@ -259,39 +246,39 @@ public class DigitCategoriser {
         DigitCategoriser digitCategoriser = new DigitCategoriser();
         String dataSet1 = "cw2DataSet1.csv";
         String dataSet2 = "cw2DataSet2.csv";
-        String dataset3 = "digits.csv";
-        String dataset4 = "digits_1.csv";
         out.println("Reading data...");
 
-        long startNanoTime = System.nanoTime();
-        ArrayList<DataVector> trainSetList = digitCategoriser.createDataSetFromFile(dataSet1);
-        ArrayList<DataVector> testSetList = digitCategoriser.createDataSetFromFile(dataSet2);
+        ArrayList<DataSet> trainSetList = digitCategoriser.createDataSetFromFile(dataSet1);
+        ArrayList<DataSet> testSetList = digitCategoriser.createDataSetFromFile(dataSet2);
 
-        //Testing the data and gets the initial result
-        int[] predictions = new int[testSetList.size()];
-        int index = 0;
-        int k = digitCategoriser.randomKNumber();
-        for (DataVector inputs : testSetList) {
-            int output = digitCategoriser.findNearestNeigbour(trainSetList, inputs, k);
-            System.out.println("Predicted: " + output + " Actual: " + inputs.output);
-            predictions[index] = output;
-            index++;
-        }
-        double accuracy = digitCategoriser.accuracyRate(testSetList, predictions);
-        System.out.println("K = " + k + " Accuracy: " + accuracy);
-
-        long estimatedTime = System.nanoTime() - startNanoTime;
-        out.println("\nEstimated nanotime: " + estimatedTime + " nanoseconds");
-        Scanner scan = new Scanner(System.in);
-        System.out.println("Continue for cross validation? Press Y for Yes and N for No.");
+        //Testing is done here it can be opt-out
+        //long startNanoTime = nanoTime();//Starting time
+//        for (int k = 1; k <= 10; k++) { //from k = 1 to k = 10
+//            int index = 0;
+//            int[] predictions = new int[testSetList.size()];
+//            out.println("K = " + k + " mode");
+//            for (DataSet inputs : testSetList) {
+//                int output = digitCategoriser.findNearestNeigbour(trainSetList, inputs, k);
+//                predictions[index] = output;
+//                out.println("Instance " + index + " Predicted: " + output + " Actual: " + inputs.output);
+//                index++;
+//            }
+//            double accuracy = digitCategoriser.accuracyRate(testSetList, predictions);
+//            out.println("Accuracy: " + accuracy);
+//        }
+//        long estimatedTime = nanoTime() - startNanoTime;
+//        out.println("\nEstimated nanotime: " + estimatedTime + " nanoseconds");
+        Scanner scan = new Scanner(in);
+        out.println("Continue for cross validation? Press Y for Yes and N for No.");
         switch (scan.nextLine()) {
             case "y":
                 //2 Fold Cross Validation here
-                System.out.println("Performing 2-Fold Cross Validation...");
-                digitCategoriser.crossValidate(trainSetList, 2);
+                out.println("Performing 2-Fold Cross Validation...");
+                long startValidationTime = nanoTime();//Starting time
+                digitCategoriser.crossValidate(trainSetList, testSetList, 2);
+                long estimatedValidationTime = nanoTime() - startValidationTime;//Ending time
+                out.println("Estimated validation Time: " + estimatedValidationTime + " nanoseconds");
                 break;
         }
-
     }
-
 }
